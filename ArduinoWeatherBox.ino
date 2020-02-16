@@ -1,4 +1,5 @@
-
+#include <SPI.h>
+#include <Ethernet.h>
 
 ///////// CHANGEABLE VALUES /////////
 
@@ -11,7 +12,17 @@ const int pressureSensorPin = A2;
 const bool trace = false;
 const bool debug = true;
 
+const char serverAddress[] = "palmyra";
+const int serverPort = 28080;
+const int httpRequestDelay = 15;
+
+const char serviceEndpoint[] = "/weather";
+
 ///////// CHANGEABLE VALUES ABOVE /////////
+
+// Ethernet
+EthernetClient ethernetClient;
+const byte mac[] = {0x90, 0xA0, 0xDA, 0x0E, 0x9B, 0xE5};
 
 // calibrated to the exact voltage on the ethernet arduino I'm using
 const double FIVE_VOLTS = 5.006;
@@ -21,15 +32,9 @@ const long ZERO_LONG = 0L;
 const double ZERO_DOUBLE = 0.0;
 
 // pressure constants
-const double PRESSURE_TEMPERATURE_ERROR_FACTOR_NORMAL = 1.0;
-
 const double KPA_TO_MILLIBARS = 10.0;
 
 // temperature constatnts
-const double temperatureOffset = 0.0;
-
-const double temperatureMultiplier = 1.252;
-const double temperatureCalculationOffset = 1.188;
 
 // counters
 long loopCounter = ZERO_LONG;
@@ -39,16 +44,45 @@ double humidityReadings = ZERO_DOUBLE;
 double pressureReadings = ZERO_DOUBLE;
 
 // timings
-const double minutesBetweenCalls = 0.5;
+const double minutesBetweenCalls = 0.25;
 
-const unsigned long millisecondsPerMinute = 15000;
+const unsigned long millisecondsPerMinute = 60000;
 const unsigned long minutesInHour = 60;
 const unsigned long timeBetweenCalls = minutesBetweenCalls * millisecondsPerMinute;
 
 unsigned long lastTimeUploaded = millis();
+unsigned long previousTime = 0UL;
 
 void setup() {
   Serial.begin(9600);
+  connectToEthernet();
+}
+
+void connectToEthernet() {
+  // attempt to connect to network:
+  // start the Ethernet connection:
+  if (Ethernet.begin((uint8_t*)mac) == 0) {
+    Serial.println("Failed to configure Ethernet using DHCP waiting 1 minute");
+    delay(millisecondsPerMinute);
+
+    if (Ethernet.begin((uint8_t*)mac) == 0)
+    {
+      Serial.println("Failed to configure Ethernet using DHCP waiting 1 more minute");
+      delay(millisecondsPerMinute);
+
+      if (Ethernet.begin((uint8_t*)mac) == 0) {
+        Serial.println("Failed to configure Ethernet using DHCP stopping - will need reset");
+        while (true);
+      }
+    }
+
+  }
+  // give the Ethernet a second to initialize:
+  delay(1000);
+  Serial.println("connecting...");
+
+  Serial.print("Connected to the network IP: ");
+  Serial.println(Ethernet.localIP());
 }
 
 void loop() {
@@ -78,11 +112,17 @@ void loop() {
 }
 
 boolean isTimeToUpload() {
-  unsigned long time = millis();
+  unsigned long currentTime = millis();
 
-  if( (time - lastTimeUploaded) >= timeBetweenCalls) {
+  if (currentTime < previousTime)  {
+    lastTimeUploaded = currentTime;
+  }
+
+  previousTime = currentTime;
+
+  if ( (currentTime - lastTimeUploaded) >= timeBetweenCalls) {
     Serial.println("Time to upload");
-    lastTimeUploaded = time;
+    lastTimeUploaded = currentTime;
     return true;
   }
   return false;
@@ -279,4 +319,46 @@ void resetAveragePressure() {
 void serialPrintln(String message, double value) {
   Serial.print(message);
   Serial.println(value);
+}
+
+void sendResultsToServer(double averageTemperature, double averageTemperatureCompensatedHumidity, double averageTemperatureCompensatedPressure) {
+  Serial.println("sendResultsToServer");
+
+  String postData = getPostData(averageTemperature, averageTemperatureCompensatedHumidity, averageTemperatureCompensatedPressure);
+  Serial.println("post data: " + postData);
+
+  /*if (ethernetClient.connect(serverAddress, serverPort)) {
+    Serial.println("connected to server");
+    // Make a HTTP request:
+    ethernetClient.println("POST " + String(serviceEndpoint) + " HTTP/1.1");
+    ethernetClient.println("Host: " + String(serverAddress) + ":" + serverPort);
+    ethernetClient.println("Content-Type: application/json");
+    ethernetClient.println("Content-Length: " + String(postData.length()));
+    ethernetClient.println("Pragma: no-cache");
+    ethernetClient.println("Cache-Control: no-cache");
+    ethernetClient.println("Connection: close");
+    ethernetClient.println();
+
+    ethernetClient.println(postData);
+    ethernetClient.println();
+
+    delay(httpRequestDelay);
+    ethernetClient.stop();
+    ethernetClient.flush();
+    Serial.println("Called server");
+  }*/
+}
+
+String getPostData(double averageTemperature, double averageTemperatureCompensatedHumidity, double averageTemperatureCompensatedPressure)
+{
+  char tempChar[10];
+  dtostrf(averageTemperature, 3, 2, tempChar);
+
+  char humidityChar[10];
+  dtostrf(averageTemperatureCompensatedHumidity, 3, 2, humidityChar);
+
+  char pressureChar[10];
+  dtostrf(averageTemperatureCompensatedPressure, 4, 2, pressureChar);
+
+  return "{\"t\":" + String(tempChar) + ",\"h\":" + String(humidityChar) + ",\"p\":" + String(pressureChar) + "}";
 }
