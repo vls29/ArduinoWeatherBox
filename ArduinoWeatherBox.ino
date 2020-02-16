@@ -15,7 +15,7 @@ const bool debug = true;
 
 // calibrated to the exact voltage on the ethernet arduino I'm using
 const double FIVE_VOLTS = 5.006;
-const double ANALOG_PIN_RANGE = 1023.0;
+const double ANALOG_PIN_RANGE = 1024.0;
 const long READING_INCREMENT = 1L;
 const long ZERO_LONG = 0L;
 const double ZERO_DOUBLE = 0.0;
@@ -184,10 +184,14 @@ void readInstantTemperatureSensorValue() {
   temperatureReadings = temperatureReadings + temperature;
 }
 
+/**
+ * From the MCP9700 documentation, at 0C, 500mV with 10mV per 1C, so take away 500mV (0.5) to give the degrees C above zero then divide by 10mV per 1C to give temperature
+ * Further reading: https://starter-kit.nettigo.eu/2010/how-to-measure-temperature-with-arduino-and-mcp9700/
+ */
 double calculateInstantTemperature() {
   double voltage = read5VAnalogPin(temperatureSensorPin);
-  double temperature = ((voltage - 0.5) * 100.0); // NEEDS CHECKING AS CANNOT FIND ANY DOCUMENTATION ON THIS FIGURE...
-  //temperature = ((temperatureMultiplier * (temperature + temperatureOffset)) + temperatureCalculationOffset);
+
+  double temperature = ((voltage - 0.5) / 0.01);
 
   return temperature;
 }
@@ -237,7 +241,7 @@ void readInstantPressureSensorValue() {
  * BECOMES
  *
  *    Vout
- * (  ____   )+ 0.04 = (Pressure * 0.004
+ * (  ____   ) + 0.04 = (Pressure * 0.004
  * 
  *   Vsupply
  *
@@ -245,24 +249,19 @@ void readInstantPressureSensorValue() {
  * BECOMES
  *
  *     Vout
- * ( (  ____   )+ 0.04) / 0.004 = Pressure
+ * ( (  ____   ) + 0.04) / 0.004 = Pressure
  * 
  *    Vsupply
  *
+ * E.g. https://www.mathpapa.com/quadratic-formula/?q=2x%5E2-5x-3%3D0
  *
- *
- *
- *
- * Calculate: Vout = Vsupply * ((Pressure * 0.004) - 0.04) using getErrorFactor(averageTemperature) for the error factor portion of the equation.
- *
- *
+ * IGNORING the pressure compensation +- as it merely gives the upper and lower limit of the epossible pressure reading.
  *
  */
 double calculateAverageTemperatureCompensatedPressure(double averageTemperature) {
   double averagePressure = (double)pressureReadings/(double)loopCounter;
 
   double calculatedPressure = ((averagePressure / FIVE_VOLTS) + 0.04) / 0.004;
-  //pressure = (pressure - getErrorFactor(instantTemperature)) * kpaToMillibarsMultiplier;
   calculatedPressure = calculatedPressure * KPA_TO_MILLIBARS;
 
   if(debug) {
@@ -275,48 +274,6 @@ double calculateAverageTemperatureCompensatedPressure(double averageTemperature)
 
 void resetAveragePressure() {
   pressureReadings = ZERO_DOUBLE;
-}
-
-/**
- * NOT IN USE
- *
- * Because the document is too vague on the +- values, cannot reliably use this error factor...
- *
- *
- * From the pressure sensor document:
- * Vout = Vsupply * ((Pressure * 0.004) - 0.04) +- (Pressure Error * Temperature Factor * 0.004 x Vsupply)
- *
- * This method calculates the Error Factor, which is: (Pressure Error * Temperature Factor * 0.004 x Vsupply).
- *
- * From the manual, the Pressure Error is a fixed +-3.45 kPa between 20 and 250kPa
- */
-double getErrorFactor(double instantTemperature) {
-  return (3.45 * getTemperatureFactor(instantTemperature) * 0.004 * FIVE_VOLTS);
-}
-
-/**
- * NOT IN USE
- *
- * From the manual, temperature factor is 1 for temperatures between 0C and 85C, for -40C it's 3 and for 125C it's 3.
- * "Note: the temperature multiplier is a linear response from 0C to -40C and from 85C to 125C"
- */
-double getTemperatureFactor(double temperature) {
-  double temperatureCompensation = PRESSURE_TEMPERATURE_ERROR_FACTOR_NORMAL;
-
-  if( temperature < ZERO_DOUBLE || temperature > 85.0)
-  {
-    double difference = ZERO_DOUBLE;
-    if(temperature > ZERO_DOUBLE)  {
-      difference = temperature - 85.0;
-    } else {
-      // invert the negative number
-      difference = temperature * -1;
-    }
-
-    temperatureCompensation += (difference * (2.0/40.0));
-  }
-
-  return temperatureCompensation;
 }
 
 void serialPrintln(String message, double value) {
