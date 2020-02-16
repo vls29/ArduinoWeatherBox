@@ -22,7 +22,7 @@ const char serviceEndpoint[] = "/weather";
 
 // Ethernet
 EthernetClient ethernetClient;
-const byte mac[] = {0x90, 0xA0, 0xDA, 0x0E, 0x9B, 0xE5};
+const byte mac[] = {0x90, 0xA2, 0xDA, 0x0F, 0x86, 0xF1};
 
 // calibrated to the exact voltage on the ethernet arduino I'm using
 const double FIVE_VOLTS = 5.006;
@@ -103,6 +103,7 @@ void loop() {
       Serial.println("******************************************************");
     }
 
+    sendResultsToServer(averageTemperature, averageTemperatureCompensatedHumidity, averageTemperatureCompensatedPressure);
     resetAverageTemperature();
     resetAverageHumidity();
     resetAveragePressure();
