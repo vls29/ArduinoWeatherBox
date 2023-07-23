@@ -12,11 +12,17 @@ const int pressureSensorPin = A2;
 const bool trace = false;
 const bool debug = true;
 
-const char serverAddress[] = "palmyra";
-const int serverPort = 28080;
+const char serverAddress[] = "home-monitoring.scaleys.co.uk";
+const int serverPort = 80;
 const int httpRequestDelay = 15;
 
 const char serviceEndpoint[] = "/weather";
+
+const double temperatureMultiplier = 1.0;
+const double temperatureCalculationOffset = 1.0;
+//const double temperatureOffset = -7.5;
+const double temperatureOffset = -2.5;
+// 21-05-09 - Room temp roughly 21.5C. temperature offset required roughly -7.5
 
 ///////// CHANGEABLE VALUES ABOVE /////////
 
@@ -33,18 +39,21 @@ const double ZERO_DOUBLE = 0.0;
 
 // pressure constants
 const double KPA_TO_MILLIBARS = 10.0;
+const double pressureOffset = 10.3;
 
 // temperature constatnts
+const double offset = 0.5;
+const double milliVolts = 100.0;
 
 // counters
 long loopCounter = ZERO_LONG;
 
-double temperatureReadings = ZERO_DOUBLE;
+unsigned long temperatureReadings = 0L;
 double humidityReadings = ZERO_DOUBLE;
 double pressureReadings = ZERO_DOUBLE;
 
 // timings
-const double minutesBetweenCalls = 0.25;
+const double minutesBetweenCalls = 1.0;
 
 const unsigned long millisecondsPerMinute = 60000;
 const unsigned long minutesInHour = 60;
@@ -216,29 +225,26 @@ void resetAverageHumidity() {
 ///////////////////////////////////////////////////////
 
 void readInstantTemperatureSensorValue() {
-  double temperature = calculateInstantTemperature();
+  int sensorVal = analogRead(temperatureSensorPin);
   
   if(trace) {
-    serialPrintln("temperature: ", temperature);
+    serialPrintln("temperature: ", sensorVal);
   }
   
-  temperatureReadings = temperatureReadings + temperature;
-}
-
-/**
- * From the MCP9700 documentation, at 0C, 500mV with 10mV per 1C, so take away 500mV (0.5) to give the degrees C above zero then divide by 10mV per 1C to give temperature
- * Further reading: https://starter-kit.nettigo.eu/2010/how-to-measure-temperature-with-arduino-and-mcp9700/
- */
-double calculateInstantTemperature() {
-  double voltage = read5VAnalogPin(temperatureSensorPin);
-
-  double temperature = ((voltage - 0.5) / 0.01);
-
-  return temperature;
+  temperatureReadings = temperatureReadings + sensorVal;
 }
 
 double calculateAverageTemperature() {
-  double averageTemperature = temperatureReadings/(double)loopCounter;
+  double averageTemperatureSensorValue = (double)temperatureReadings/(double)loopCounter;
+  double voltageAverage = (averageTemperatureSensorValue / ANALOG_PIN_RANGE) * FIVE_VOLTS;
+  serialPrintln("temperatureReadings: ", temperatureReadings);
+  serialPrintln("averageTemperatureSensorValue: ", averageTemperatureSensorValue);
+  serialPrintln("Temperature Average Voltage: ", voltageAverage);
+
+  double averageTemperature = (voltageAverage - offset) * milliVolts;
+  serialPrintln("averageTemperature before more complex calc...: ", averageTemperature);
+  averageTemperature = ((temperatureMultiplier * (averageTemperature + temperatureOffset)) + temperatureCalculationOffset);
+
 
   if(debug) {
     serialPrintln("Average Temperature: ", averageTemperature);
@@ -248,7 +254,7 @@ double calculateAverageTemperature() {
 }
 
 void resetAverageTemperature() {
-  temperatureReadings = ZERO_DOUBLE;
+  temperatureReadings = 0L;
 }
 
 
@@ -303,7 +309,7 @@ double calculateAverageTemperatureCompensatedPressure(double averageTemperature)
   double averagePressure = (double)pressureReadings/(double)loopCounter;
 
   double calculatedPressure = ((averagePressure / FIVE_VOLTS) + 0.04) / 0.004;
-  calculatedPressure = calculatedPressure * KPA_TO_MILLIBARS;
+  calculatedPressure = (calculatedPressure * KPA_TO_MILLIBARS) + pressureOffset;
 
   if(debug) {
     serialPrintln("Average pressure sensor reading: ", averagePressure);
@@ -328,7 +334,7 @@ void sendResultsToServer(double averageTemperature, double averageTemperatureCom
   String postData = getPostData(averageTemperature, averageTemperatureCompensatedHumidity, averageTemperatureCompensatedPressure);
   Serial.println("post data: " + postData);
 
-  /*if (ethernetClient.connect(serverAddress, serverPort)) {
+  if (ethernetClient.connect(serverAddress, serverPort)) {
     Serial.println("connected to server");
     // Make a HTTP request:
     ethernetClient.println("POST " + String(serviceEndpoint) + " HTTP/1.1");
@@ -347,7 +353,7 @@ void sendResultsToServer(double averageTemperature, double averageTemperatureCom
     ethernetClient.stop();
     ethernetClient.flush();
     Serial.println("Called server");
-  }*/
+  }
 }
 
 String getPostData(double averageTemperature, double averageTemperatureCompensatedHumidity, double averageTemperatureCompensatedPressure)
@@ -361,5 +367,5 @@ String getPostData(double averageTemperature, double averageTemperatureCompensat
   char pressureChar[10];
   dtostrf(averageTemperatureCompensatedPressure, 4, 2, pressureChar);
 
-  return "{\"t\":" + String(tempChar) + ",\"h\":" + String(humidityChar) + ",\"p\":" + String(pressureChar) + "}";
+  return "{\"temperature\":" + String(tempChar) + ",\"humidity\":" + String(humidityChar) + ",\"pressure\":" + String(pressureChar) + "}";
 }
