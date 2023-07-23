@@ -68,24 +68,19 @@ void setup() {
 }
 
 void connectToEthernet() {
-  // attempt to connect to network:
   // start the Ethernet connection:
-  if (Ethernet.begin((uint8_t*)mac) == 0) {
-    Serial.println("Failed to configure Ethernet using DHCP waiting 1 minute");
-    delay(millisecondsPerMinute);
+  bool connectedToNetwork = false;
+  while(!connectedToNetwork) {
+    Serial.println("Attempting to connect to network...");
 
-    if (Ethernet.begin((uint8_t*)mac) == 0)
-    {
-      Serial.println("Failed to configure Ethernet using DHCP waiting 1 more minute");
-      delay(millisecondsPerMinute);
-
-      if (Ethernet.begin((uint8_t*)mac) == 0) {
-        Serial.println("Failed to configure Ethernet using DHCP stopping - will need reset");
-        while (true);
-      }
+    if (Ethernet.begin(mac) == 0) {
+        Serial.println("Failed to connect, trying again...");
+    } else {
+        Serial.println("Connected successfully");
+        connectedToNetwork = true;
     }
-
   }
+
   // give the Ethernet a second to initialize:
   delay(1000);
   Serial.println("connecting...");
